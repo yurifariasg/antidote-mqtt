@@ -9,10 +9,14 @@ libcommplugin_la_SOURCES = plugin.c
 libcommpluginimpl_la_SOURCES = \
                    plugin_tcp.c \
                    plugin_tcp_agent.c \
-		   plugin_pthread.c
+		   plugin_pthread.c \
+                   plugin_mqtt.c \
+                   plugin_mqtt_agent.c
 
 noinst_HEADERS = plugin.h \
                    plugin_tcp.h \
                    plugin_tcp_agent.h \
-		   plugin_pthread.h
+		   plugin_pthread.h \
+                   plugin_mqtt.h \
+                   plugin_mqtt_agent.h
 

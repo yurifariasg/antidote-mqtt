@@ -34,7 +34,8 @@
 #include <unistd.h>
 
 #include <ieee11073.h>
-#include "communication/plugin/plugin_tcp.h"
+// #include "communication/plugin/plugin_tcp.h"
+#include "communication/plugin/plugin_mqtt.h"
 #include "communication/service.h"
 #include "util/log.h"
 
@@ -57,7 +58,7 @@ static CommunicationPlugin comm_plugin = COMMUNICATION_PLUGIN_NULL;
 /**
  * TCP port to use
  */
-int port = 6024;
+// int port = 6024;
 
 /**
  * Callback function that is called whenever a new data
@@ -176,20 +177,21 @@ static int timer_count_timeout(Context *ctx)
 /**
  * Configure application to use tcp plugin
  */
-static void tcp_mode()
+static void mqtt_mode()
 {
 	// NOTE we know that plugin id=1 here,
 	// but might not be the case if there were many plugins!
 	CONTEXT_ID.plugin = 1;
-	CONTEXT_ID.connid = port;
-	plugin_network_tcp_setup(&comm_plugin, 1, port);
+	CONTEXT_ID.connid = 1; //port; // The conn id is the port...
+	plugin_network_mqtt_setup(&comm_plugin);
+	// plugin_network_tcp_setup(&comm_plugin, 1, port);
 }
 
 /**
  * Main function
  */
 int main(int argc, char **argv)
-{
+{	
 	comm_plugin = communication_plugin();
 
 	if (argc == 2) {
@@ -197,7 +199,7 @@ int main(int argc, char **argv)
 			print_help();
 			exit(0);
 		} else if (strcmp(argv[1], "--tcp") == 0) {
-			tcp_mode();
+			mqtt_mode();
 		} else {
 			fprintf(stderr, "ERROR: invalid option: %s\n", argv[1]);
 			fprintf(stderr, "Try `ieee_manager --help'"
@@ -212,7 +214,7 @@ int main(int argc, char **argv)
 		exit(1);
 	} else {
 		// TCP is default mode
-		tcp_mode();
+		mqtt_mode();
 	}
 
 	fprintf(stderr, "\nIEEE 11073 Sample application\n");
@@ -232,8 +234,8 @@ int main(int argc, char **argv)
 	manager_start();
 
 	int x = 0;
-	while (x++ < 3) {
-		plugin_network_tcp_connect(port);
+	while (x++ < 1) {
+		plugin_network_mqtt_connect();
 		manager_connection_loop(CONTEXT_ID);
 		DEBUG("----------------------");
 	}
