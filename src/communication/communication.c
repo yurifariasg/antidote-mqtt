@@ -1235,16 +1235,13 @@ void communication_connection_loop(Context *ctx)
 	// so we need so check it every loop, based on ID.
 
 	while ((ctx = context_get_and_lock(id))) {
-    DEBUG(" commnication: locked context...\n");
 		if (!get_connection_loop_active(ctx)) {
-      DEBUG(" communication: unlocking...\n");
 			context_unlock(ctx);
 			break;
 		}
 
 		communication_wait_for_data_input(ctx);
 		communication_read_input_stream(id);
-    DEBUG(" communication: unlocking...\n");
 		context_unlock(ctx);
 	}
 }

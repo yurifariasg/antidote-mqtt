@@ -245,6 +245,7 @@ int main(int argc, char **argv)
 
 	signal(SIGALRM, sigalrm);
 	agent_connection_loop(CONTEXT_ID);
+  
   printf("Calling agent_finalize()\n");
 	agent_finalize();
 
