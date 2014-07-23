@@ -55,7 +55,7 @@ void sig_handler(int signo)
 int main(int argc, char *argv[])
 {
 	signal(SIGINT, sig_handler);
-	char* id = "test_manager";
+	char* id = "listener_manager";
 	char *host = "localhost";
 	int port = 1883;
 	int keepalive = 60;

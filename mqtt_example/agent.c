@@ -27,7 +27,8 @@ void my_connect_callback(struct mosquitto *mosq, void *userdata, int result)
 		/* Publish to broker on successful connect. */
 		char* payload = "Hello World";
 		int payloadlen = strlen(payload);
-
+                mosquitto_subscribe(mosq, NULL, "$hello/world", 2);
+                sleep(5);
 		mosquitto_publish(mosq, NULL, "$hello/world", payloadlen, payload, 2, false);
 	}else{
 		fprintf(stderr, "Connect failed\n");

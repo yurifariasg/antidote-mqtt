@@ -38,7 +38,7 @@
 #include <time.h>
 
 #include <ieee11073.h>
-#include "communication/plugin/plugin_tcp_agent.h"
+#include "communication/plugin/plugin_mqtt_agent.h"
 #include "agent.h"
 #include "sample_agent_common.h"
 
@@ -68,7 +68,7 @@ static void sigalrm(int dummy)
 	// This is not incredibly safe, because signal may interrupt
 	// processing, and is not a technique for a production agent,
 	// but suffices for this quick 'n dirty sample
-	
+
 	if (alarms > 1) {
 		agent_send_data(CONTEXT_ID);
 		alarm(3);
@@ -158,14 +158,14 @@ static int timer_count_timeout(Context *ctx)
 /**
  * Configure application to use tcp plugin
  */
-static void tcp_mode()
+static void mqtt_mode()
 {
-	int port = 6024;
+	// int port = 6024;
 	// NOTE we know that plugin id = 1 here, but
 	// might not be the case!
 	CONTEXT_ID.plugin = 1;
-	CONTEXT_ID.connid = port;
-	plugin_network_tcp_agent_setup(&comm_plugin, port);
+	CONTEXT_ID.connid = 0;//port;
+	plugin_network_mqtt_agent_setup(&comm_plugin);//, port);
 }
 
 /**
@@ -203,7 +203,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	tcp_mode();
+	mqtt_mode();
 
 	fprintf(stderr, "\nIEEE 11073 sample agent\n");
 
@@ -245,9 +245,8 @@ int main(int argc, char **argv)
 
 	signal(SIGALRM, sigalrm);
 	agent_connection_loop(CONTEXT_ID);
-
+  printf("Calling agent_finalize()\n");
 	agent_finalize();
 
 	return 0;
 }
-

@@ -89,7 +89,7 @@ typedef struct NetworkSocket {
 	 * TCP port to listen
 	 */
 	int tcp_port;
-	
+
 	/**
 	 * Server sockaddr
  	 */
@@ -126,6 +126,57 @@ static LinkedList *sockets = NULL;
  * Our Mosquitto Instance to connect with the mqtt broker
  */
 static struct mosquitto *mosq;
+/*
+ * A Recent mosquitto message
+ */
+static struct mosquitto_message mosq_message;
+static int messages = 0;
+
+/*
+ * Mosquitto Callbacks.
+ */
+void my_message_callback(struct mosquitto *mosq, void *userdata, const struct mosquitto_message *message)
+{
+  DEBUG("[MESSAGE]\n");
+  if(message->payloadlen){
+    DEBUG("%s %s\n", message->topic, (char*)message->payload);
+    // mosq_message = );
+    mosquitto_message_copy(&mosq_message, message);
+    messages = 1;
+  }else{
+    DEBUG("%s (null)\n", message->topic);
+  }
+  // fflush(stdout);
+}
+
+void my_connect_callback(struct mosquitto *mosq, void *userdata, int result)
+{
+  DEBUG("my_connect_callback\n");
+  if(!result){
+    /* Subscribe to broker information topics on successful connect. */
+    // mosquitto_subscribe(mosq, NULL, "$SYS/#", 2);
+    mosquitto_subscribe(mosq, NULL, "$hello/world/manager", 2);
+  }else{
+    ERROR("Connect failed\n");
+  }
+}
+
+void my_subscribe_callback(struct mosquitto *mosq, void *userdata, int mid, int qos_count, const int *granted_qos)
+{
+  int i;
+  DEBUG("Subscribed (mid: %d): %d", mid, granted_qos[0]);
+  for(i=1; i<qos_count; i++){
+    DEBUG(", %d", granted_qos[i]);
+  }
+  DEBUG("\n");
+}
+
+void my_log_callback(struct mosquitto *mosq, void *userdata, int level, const char *str)
+{
+  /* Pring all log messages regardless of level. */
+  // DEBUG("[LOG] ");
+  // DEBUG("%s\n", str);
+}
 
 /**
  * \cond Undocumented
@@ -155,6 +206,7 @@ static int search_socket_by_port(void *arg, void *element)
  */
 static NetworkSocket *get_socket(int port)
 {
+  ERROR("Get Socket... This will probably fail...");
 	return (NetworkSocket *) llist_search_first(sockets, &port,
 			&search_socket_by_port);
 }
@@ -260,6 +312,15 @@ static int network_init(unsigned int plugin_label)
  */
 static int network_mqtt_wait_for_data(Context *ctx)
 {
+  DEBUG("mqtt: network_mqtt_wait_for_data");
+
+  while (1) {
+    if (messages != 0) {
+      break;
+    }
+    sleep(1);
+  }
+
 	return TCP_ERROR_NONE;
 	// NetworkSocket *sk = get_socket(ctx->id.connid);
 
@@ -303,9 +364,15 @@ static int network_mqtt_wait_for_data(Context *ctx)
  */
 static ByteStreamReader *network_get_apdu_stream(Context *ctx)
 {
+  DEBUG("network_get_apdu_stream");
+  // const struct mosquitto_message *message = mosq_message;
+  // struct mosquitto_message *message = &mosq_message;
+  // mosquitto_message_free(&message);
+  messages = 0;
+  // mosq_message = NULL;
 	// NetworkSocket *sk = get_socket(ctx->id.connid);
 	// ContextId cid = {plugin_id, 1};//sk->tcp_port};
-	return NULL;
+	// return message->payload;
 
 	// if (sk == NULL) {
 	// 	ERROR("network tcp: network_get_apdu_stream cannot found a valid sokcet");
@@ -377,7 +444,16 @@ static ByteStreamReader *network_get_apdu_stream(Context *ctx)
 	// DEBUG(" network:tcp APDU received ");
 	// ioutil_print_buffer(stream->buffer_cur, apdu_size);
 
-	// return stream;
+  ByteStreamReader *stream = byte_stream_reader_instance(mosq_message.payload, mosq_message.payloadlen);
+  //
+  if (stream == NULL) {
+    DEBUG(" network:tcp Error creating bytelib");
+    // free(buffer);
+    // buffer = NULL;
+    // buffer_size = 0;
+    return NULL;
+  }
+	return stream;
 }
 
 /**
@@ -389,32 +465,40 @@ static ByteStreamReader *network_get_apdu_stream(Context *ctx)
  */
 static int network_send_apdu_stream(Context *ctx, ByteStreamWriter *stream)
 {
-	NetworkSocket *sk = get_socket(ctx->id.connid);
+  DEBUG("network_send_apdu_stream");
+  sleep(1);
 
-	if (sk == NULL)
-		return TCP_ERROR;
+  mosquitto_publish(mosq, NULL, "$hello/world/agent",
+      stream->size,
+      stream->buffer,
+      2, false);
 
-	unsigned int written = 0;
+	// NetworkSocket *sk = get_socket(ctx->id.connid);
 
-	while (written < stream->size) {
-		int to_send = stream->size - written;
-#ifdef TEST_FRAGMENTATION
-		to_send = to_send > 50 ? 50 : to_send;
-#endif
-		int ret = write(sk->client_sk, stream->buffer + written, to_send);
-
-		DEBUG(" network:tcp sent %d bytes", to_send);
-
-		if (ret <= 0) {
-			DEBUG(" network:tcp Error sending APDU.");
-			return TCP_ERROR;
-		}
-
-		written += ret;
-	}
+// 	if (sk == NULL)
+// 		return TCP_ERROR;
+//
+// 	unsigned int written = 0;
+//
+// 	while (written < stream->size) {
+// 		int to_send = stream->size - written;
+// #ifdef TEST_FRAGMENTATION
+// 		to_send = to_send > 50 ? 50 : to_send;
+// #endif
+// 		int ret = write(sk->client_sk, stream->buffer + written, to_send);
+//
+// 		DEBUG(" network:tcp sent %d bytes", to_send);
+//
+// 		if (ret <= 0) {
+// 			DEBUG(" network:tcp Error sending APDU.");
+// 			return TCP_ERROR;
+// 		}
+//
+// 		written += ret;
+// 	}
 
 	DEBUG(" network:tcp APDU sent ");
-	ioutil_print_buffer(stream->buffer, stream->size);
+	// ioutil_print_buffer(stream->buffer, stream->size);
 
 	return TCP_ERROR_NONE;
 }
@@ -505,6 +589,16 @@ static int create_socket()
     	ERROR("Error: Out of memory.\n");
     	return TCP_ERROR;
     }
+
+    mosquitto_log_callback_set(mosq, my_log_callback);
+    mosquitto_connect_callback_set(mosq, my_connect_callback);
+    mosquitto_message_callback_set(mosq, my_message_callback);
+    mosquitto_subscribe_callback_set(mosq, my_subscribe_callback);
+
+
+    mosquitto_connect(mosq, "localhost", 1883, 300);
+    DEBUG("Sent connection request");
+    mosquitto_loop_start(mosq);
 
 	// if (sockets == NULL) {
 		// sockets = llist_new();

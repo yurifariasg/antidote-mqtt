@@ -37,7 +37,7 @@
 #include <time.h>
 
 #include <ieee11073.h>
-#include "communication/plugin/plugin_tcp_agent.h"
+#include "communication/plugin/plugin_mqtt_agent.h"
 #include "specializations/pulse_oximeter.h"
 #include "specializations/blood_pressure_monitor.h"
 #include "specializations/weighing_scale.h"
