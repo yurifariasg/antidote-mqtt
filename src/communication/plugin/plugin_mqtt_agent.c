@@ -118,7 +118,7 @@ static int network_mqtt_wait_for_data(Context *ctx)
     if (messages != 0) {
       break;
     }
-    sleep(0.1);
+    sleep(0.0001);
   }
 
   return MQTT_ERROR_NONE;
@@ -156,7 +156,7 @@ static int network_send_apdu_stream(Context *ctx, ByteStreamWriter *stream)
   mosquitto_publish(mosq, NULL, "$manager",
       stream->size,
       stream->buffer,
-      2, false);
+      0, false);
 
   DEBUG("[MQTT] network: APDU sent ");
 
