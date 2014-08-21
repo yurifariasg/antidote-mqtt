@@ -19,6 +19,7 @@
 
 // #define TEST_FRAGMENTATION 1
 // #define MQTT_LOGS 1
+#define MQTT_QOS 1
 
 /**
  * Plugin ID attributed by stack
@@ -41,6 +42,7 @@ static struct mosquitto *mosq;
  */
 static struct mosquitto_message mosq_message;
 static int messages = 0;
+static int subscribed = 0;
 
 /*
  * Mosquitto Callbacks.
@@ -59,7 +61,7 @@ void my_connect_callback(struct mosquitto *mosq, void *userdata, int result)
   if(!result){
     /* Subscribe to broker information topics on successful connect. */
     DEBUG("[MQTT] Connected! Sending subscribe request...\n");
-    mosquitto_subscribe(mosq, NULL, "$manager", 2);
+    mosquitto_subscribe(mosq, NULL, "$manager", MQTT_QOS);
   }else{
     ERROR("[MQTT] Connect failed\n");
   }
@@ -68,6 +70,7 @@ void my_connect_callback(struct mosquitto *mosq, void *userdata, int result)
 void my_subscribe_callback(struct mosquitto *mosq, void *userdata, int mid, int qos_count, const int *granted_qos)
 {
   DEBUG("[MQTT] Subscribed (mid: %d)", mid);
+  subscribed = 1;
 }
 
 void my_log_callback(struct mosquitto *mosq, void *userdata, int level, const char *str)
@@ -109,8 +112,12 @@ static int network_init(unsigned int plugin_label)
   mosquitto_message_callback_set(mosq, my_message_callback);
   mosquitto_subscribe_callback_set(mosq, my_subscribe_callback);
 
+  subscribed = 0;
   mosquitto_connect(mosq, "localhost", 1883, 300);
   mosquitto_loop_start(mosq);
+  while (subscribed == 0) {
+    sleep(0.0001);
+  }
 
 	return MQTT_ERROR_NONE;
 }
@@ -164,10 +171,13 @@ static int network_send_apdu_stream(Context *ctx, ByteStreamWriter *stream)
 {
   DEBUG("[MQTT] network_send_apdu_stream");
 
-  mosquitto_publish(mosq, NULL, "$agent",
+  while (mosquitto_publish(mosq, NULL, "$agent",
       stream->size,
       stream->buffer,
-      0, false);
+      MQTT_QOS, false) != MOSQ_ERR_SUCCESS) {
+    DEBUG("[MQTT] Retrying...");
+    sleep(1);
+  }
 
 	DEBUG("[MQTT] network: APDU sent ");
 

@@ -20,6 +20,8 @@ unsigned int plugin_id = 1;
 
 // #define MQTT_LOGS 1
 
+#define MQTT_QOS 1
+
 static const int MQTT_ERROR = NETWORK_ERROR;
 static const int MQTT_ERROR_NONE = NETWORK_ERROR_NONE;
 static const int BACKLOG = 1;
@@ -30,11 +32,19 @@ static int port = 0;
  * Our Mosquitto Instance to connect with the mqtt broker
  */
 static struct mosquitto *mosq = NULL;
+
+#define push(sp, n) (*((sp)++) = (n))
+#define pop(sp) (*--(sp))
+
 /*
  * A Recent mosquitto message
  */
-static struct mosquitto_message mosq_message;
+//static struct mosquitto_message mosq_message_aux;
 static int messages = -1; // -1 = Invalidated
+static int subscribed = 0;
+
+static const struct mosquitto_message* stack[1000];
+static const struct mosquitto_message* *sp;
 
 /*
  * Mosquitto Callbacks.
@@ -43,8 +53,14 @@ void my_message_callback(struct mosquitto *mosq, void *userdata, const struct mo
 {
   DEBUG("[MQTT] Message Received");
   if(message->payloadlen){
-    mosquitto_message_copy(&mosq_message, message);
-    messages = 1;
+    //mosquitto_message *received_message = new mosquitto_message();
+    //mosquitto_message_copy(&mosq_message, message);
+    struct mosquitto_message* received_message = (struct mosquitto_message*)malloc(sizeof(struct mosquitto_message) );// = {};
+    mosquitto_message_copy(received_message, message);
+
+    push(sp, received_message);
+    messages = messages + 1;
+    DEBUG("[MQTT] Message Count: %d", messages);
   }
 }
 
@@ -53,7 +69,7 @@ void my_connect_callback(struct mosquitto *mosq, void *userdata, int result)
   if(!result){
     /* Subscribe to broker information topics on successful connect. */
     DEBUG("[MQTT] Connected! Sending subscribe request...\n");
-    mosquitto_subscribe(mosq, NULL, "$agent", 2);
+    mosquitto_subscribe(mosq, NULL, "$agent", MQTT_QOS);
   }else{
     ERROR("[MQTT] Connect failed\n");
   }
@@ -62,6 +78,8 @@ void my_connect_callback(struct mosquitto *mosq, void *userdata, int result)
 void my_subscribe_callback(struct mosquitto *mosq, void *userdata, int mid, int qos_count, const int *granted_qos)
 {
   DEBUG("[MQTT] Subscribed (mid: %d)", mid);
+  subscribed = 1;
+  messages = 0;
 }
 
 void my_log_callback(struct mosquitto *mosq, void *userdata, int level, const char *str)
@@ -86,18 +104,23 @@ static int network_init(unsigned int plugin_label)
     return MQTT_ERROR;
   }
 
+  sp = stack;
+
   #ifdef MQTT_LOGS
   mosquitto_log_callback_set(mosq, my_log_callback);
   #endif
   mosquitto_connect_callback_set(mosq, my_connect_callback);
   mosquitto_message_callback_set(mosq, my_message_callback);
   mosquitto_subscribe_callback_set(mosq, my_subscribe_callback);
-
+  
+  subscribed = 0;
   mosquitto_connect(mosq, "localhost", 1883, 300);
   mosquitto_loop_start(mosq);
 
   // Wait until connects..
-  sleep(1);
+  while (subscribed == 0) {
+    sleep(0.0001);
+  }
   ContextId cid = {plugin_id, port};
   communication_transport_connect_indication(cid, "mqtt");
 
@@ -132,14 +155,20 @@ static int network_mqtt_wait_for_data(Context *ctx)
 static ByteStreamReader *network_get_apdu_stream(Context *ctx)
 {
   DEBUG("[MQTT] network_get_apdu_stream. Currently with %d messages", messages);
-  messages = 0;
-  ByteStreamReader *stream = byte_stream_reader_instance(mosq_message.payload, mosq_message.payloadlen);
 
-  if (stream == NULL) {
-    DEBUG("[MQTT] network:Error creating bytelib");
+  if (messages > 0) {
+    messages = messages - 1;
+    const struct mosquitto_message* message = pop(sp);
+    ByteStreamReader *stream = byte_stream_reader_instance(message->payload, message->payloadlen);
+
+    if (stream == NULL) {
+      DEBUG("[MQTT] network:Error creating bytelib");
+      return NULL;
+    }
+    return stream;
+  } else {
     return NULL;
   }
-  return stream;
 }
 
 /**
@@ -151,12 +180,21 @@ static ByteStreamReader *network_get_apdu_stream(Context *ctx)
  */
 static int network_send_apdu_stream(Context *ctx, ByteStreamWriter *stream)
 {
+  while (subscribed == 0) {
+    DEBUG("Waiting on send apdu...");
+    sleep(0.0001);
+  }
+
   DEBUG("[MQTT] network_send_apdu_stream");
 
-  mosquitto_publish(mosq, NULL, "$manager",
+  while (mosquitto_publish(mosq, NULL, "$manager",
       stream->size,
       stream->buffer,
-      0, false);
+      MQTT_QOS, false) != MOSQ_ERR_SUCCESS) {
+    DEBUG("Failed to Publish.. Retrying..");
+    sleep(1);
+  }
+
 
   DEBUG("[MQTT] network: APDU sent ");
 
